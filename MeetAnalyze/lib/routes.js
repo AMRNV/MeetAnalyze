@@ -41,7 +41,7 @@ const results = {};
  */
 const upload = multer({
   dest: path.join(__dirname, '..', 'uploads'),
-  limits: { fileSize: 20 * 1024 * 1024 },
+  limits: { fileSize: 100 * 1024 * 1024 },
   fileFilter(req, file, cb) {
     if (file.originalname.match(/\.(mp3|mp4|wav|ogg|webm|mov|txt|docx)$/i)) {
       cb(null, true);

@@ -24,24 +24,34 @@ const execFileAsync = promisify(execFile);
  * @returns {Promise<string>} Plain-text transcription.
  */
 export async function transcribeAudio(filePath, model = 'small') {
-  // Use a temp directory so Whisper's output files don't land in /uploads.
-  const outDir = fs.mkdtempSync(path.join(os.tmpdir(), 'whisper-'));
+  const workDir = fs.mkdtempSync(path.join(os.tmpdir(), 'whisper-'));
+
+  // Whisper/ffmpeg fail on paths with spaces — copy the file into the temp dir first.
+  const safeInput = path.join(workDir, 'input' + path.extname(filePath));
+  fs.copyFileSync(filePath, safeInput);
 
   try {
-    await execFileAsync('whisper', [
-      filePath,
+    const whisperBin = process.env.WHISPER_PATH || 'whisper';
+
+    // Point ffmpeg to its installed location so Whisper can find it.
+    const ffmpegDir = process.env.FFMPEG_PATH
+      ? path.dirname(process.env.FFMPEG_PATH)
+      : 'C:\\Users\\Alex\\AppData\\Local\\Microsoft\\WinGet\\Packages\\Gyan.FFmpeg_Microsoft.Winget.Source_8wekyb3d8bbwe\\ffmpeg-8.1.1-full_build\\bin';
+
+    await execFileAsync(whisperBin, [
+      safeInput,
       '--model', model,
       '--output_format', 'txt',
-      '--output_dir', outDir,
+      '--output_dir', workDir,
       '--language', 'en',
-    ]);
+    ], {
+      env: { ...process.env, PATH: `${ffmpegDir};${process.env.PATH}` },
+    });
 
-    // Whisper names the output file after the input filename, e.g. "abc123.txt"
-    const baseName = path.basename(filePath, path.extname(filePath));
-    const txtPath = path.join(outDir, `${baseName}.txt`);
-    return fs.readFileSync(txtPath, 'utf8').trim();
+    const txtFile = fs.readdirSync(workDir).find(f => f.endsWith('.txt'));
+    if (!txtFile) throw new Error('Whisper did not produce a transcript file.');
+    return fs.readFileSync(path.join(workDir, txtFile), 'utf8').trim();
   } finally {
-    // Clean up the temp output directory.
-    fs.rmSync(outDir, { recursive: true, force: true });
+    fs.rmSync(workDir, { recursive: true, force: true });
   }
 }
